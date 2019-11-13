@@ -11,29 +11,31 @@ class CPU:
         self.pc = 0
         self.ram = [0] * 256
         self.reg = [0] * 8
+        self.sp = 7
+        self.instructions = {
+            1: self.HLT,
+            130: self.LDI,
+            71: self.PRN,
+            69: self.PUSH,
+            70: self.POP,
+            80: self.CALL,
+            17: self.RET,
+            160: self.ADD,
+            162: self.MUL
+        }
 
-    def ram_read(self, mem_addr):
-        return self.ram[mem_addr]
-
-    def ram_write(self, mem_addr, mem_data):
-        self.ram[mem_addr] = mem_data
-
-    def load(self):
+    def load(self, path):
         """Load a program into memory."""
 
         address = 0
+        program = []
 
         # For now, we've just hardcoded a program:
-
-        program = [
-            # From print8.ls8
-            0b10000010,  # LDI R0,8
-            0b00000000,
-            0b00001000,
-            0b01000111,  # PRN R0
-            0b00000000,
-            0b00000001,  # HLT
-        ]
+        with open(path) as f:
+            for line in f:
+                instruction = line.split('#', 1)[0].strip()
+                if len(instruction):
+                    program.append(int(instruction, 2))
 
         for instruction in program:
             self.ram[address] = instruction
@@ -44,7 +46,12 @@ class CPU:
 
         if op == "ADD":
             self.reg[reg_a] += self.reg[reg_b]
-        # elif op == "SUB": etc
+        elif op == "MUL":
+            self.reg[reg_a] *= self.reg[reg_b]
+        elif op == "SUB":
+            self.reg[reg_a] -= self.reg[reg_b]
+        elif op == "DIV":
+            self.reg[reg_a] /= self.reg[reg_b]
         else:
             raise Exception("Unsupported ALU operation")
 
@@ -68,27 +75,67 @@ class CPU:
 
         print()
 
+    def HLT(self):
+        sys.exit(1)
+        self.running = False
+
+    def LDI(self):
+        reg_a = self.ram_read(self.pc + 1)
+        num = self.ram_read(self.pc + 2)
+        self.reg[reg_a] = num
+        self.pc +=3
+
+    def PRN(self):
+        print(self.reg[self.ram_read(self.pc + 1)])
+        self.pc += 2
+
+    def PUSH(self):
+        reg_a = self.ram[self.pc + 1]
+        value = self.reg[reg_a]
+        self.reg[self.sp] -= 1 # decrement the pointer address
+        self.ram[self.reg[self.sp]] = value
+        self.pc += 2
+
+    def POP(self):
+        reg_a = self.ram[self.pc + 1]
+        value = self.ram[self.reg[self.sp]]
+        self.reg[reg_a] = value
+        self.reg[self.sp] += 1
+        self.pc += 2
+
+    def CALL(self):
+        self.reg[self.sp] -= 1
+        self.ram[self.reg[self.sp]] = self.pc + 2
+        reg_a = self.ram[self.pc + 1]
+        self.reg[6] = self.pc + 2
+        self.pc = self.reg[reg_a]
+
+    def RET(self):
+        # pc = self.ram[self.reg[self.sp]]
+        self.reg[self.sp] += 1
+        self.pc = self.reg[6]
+    
+    def ADD(self):
+        reg_a = self.ram_read(self.pc + 1)
+        reg_b = self.ram_read(self.pc + 2)
+        self.alu('ADD', reg_a, reg_b)
+        self.pc +=3
+    
+    def MUL(self):
+        reg_a = self.ram_read(self.pc + 1)
+        reg_b = self.ram_read(self.pc + 2)
+        self.alu('MUL', reg_a, reg_b)
+        self.pc += 3
+
     def run(self):
         """Run the CPU."""
-        running = True
 
-        while running:
-            inst_reg = self.ram[self.pc]
-            opr_a = self.ram[self.pc + 1]
-            opr_b = self.ram[self.pc + 2]
+        while True: 
+            register = self.ram_read(self.pc)
+            self.instructions[register]()
 
-            if inst_reg == 0b00000001:
-                running = False
-                self.pc += 1
+    def ram_read(self, mar):
+        return self.ram[mar]
 
-            elif inst_reg == 0b10000010:
-                self.reg[opr_a] = opr_b
-                self.pc += 3
-
-            elif inst_reg == 0b01000111:
-                print(self.reg[opr_a])
-                self.pc += 2
-
-            else:
-                print(f'Unknown command {inst_reg}')
-                sys.exit(1)
+    def ram_write(self, value, mar):
+        self.ram[mar] = value
